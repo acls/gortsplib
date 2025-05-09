@@ -12,12 +12,12 @@ import (
 )
 
 const (
-	existingStream = "rtsp://x.x.x.x:8554/mystream"
+	existingStream = "rtsp://myuser:mypass@x.x.x.x:8554/mystream"
 	reconnectPause = 2 * time.Second
 )
 
 type client struct {
-	s *server
+	server *server
 }
 
 func (c *client) initialize() {
@@ -62,8 +62,9 @@ func (c *client) read() error {
 		return err
 	}
 
-	stream := c.s.setStreamReady(desc)
-	defer c.s.setStreamUnready()
+	// notify the server that we are ready
+	stream := c.server.setStreamReady(desc)
+	defer c.server.setStreamUnready()
 
 	log.Printf("stream is ready and can be read from the server at rtsp://localhost:8554/stream\n")
 

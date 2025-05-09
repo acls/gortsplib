@@ -10,15 +10,15 @@ import (
 )
 
 // This example shows how to
-// 1. connect to a RTSP server
-// 2. check if there's an MPEG-4 audio format
-// 3. get access units of that format
+// 1. connect to a RTSP server.
+// 2. check if there's a MPEG-4 audio stream.
+// 3. get access units of that format.
 
 func main() {
 	c := gortsplib.Client{}
 
 	// parse URL
-	u, err := base.ParseURL("rtsp://localhost:8554/mystream")
+	u, err := base.ParseURL("rtsp://myuser:mypass@localhost:8554/mystream")
 	if err != nil {
 		panic(err)
 	}
@@ -58,7 +58,7 @@ func main() {
 	// called when a RTP packet arrives
 	c.OnPacketRTP(medi, forma, func(pkt *rtp.Packet) {
 		// decode timestamp
-		pts, ok := c.PacketPTS(medi, pkt)
+		pts, ok := c.PacketPTS2(medi, pkt)
 		if !ok {
 			log.Printf("waiting for timestamp")
 			return

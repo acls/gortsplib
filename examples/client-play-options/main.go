@@ -13,8 +13,8 @@ import (
 )
 
 // This example shows how to
-// 1. set additional client options
-// 2. connect to a RTSP server and read all medias on a path
+// 1. set additional client options.
+// 2. connect to a RTSP server and read all medias on a path.
 
 func main() {
 	// Client allows to set additional client options
@@ -28,7 +28,7 @@ func main() {
 	}
 
 	// parse URL
-	u, err := base.ParseURL("rtsp://localhost:8554/mystream")
+	u, err := base.ParseURL("rtsp://myuser:mypass@localhost:8554/mystream")
 	if err != nil {
 		panic(err)
 	}

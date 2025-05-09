@@ -239,6 +239,8 @@ func (e ErrServerUnexpectedResponse) Error() string {
 type ErrServerWriteQueueFull = ErrClientWriteQueueFull
 
 // ErrServerRTPPacketsLost is an error that can be returned by a server.
+//
+// Deprecated: will be removed in next version.
 type ErrServerRTPPacketsLost = ErrClientRTPPacketsLost
 
 // ErrServerRTPPacketUnknownPayloadType is an error that can be returned by a server.
@@ -261,12 +263,22 @@ func (e ErrServerStreamClosed) Error() string {
 	return "stream is closed"
 }
 
-// ErrServerPathNoSlash is an error that can be returned by a server.
-type ErrServerPathNoSlash struct{}
+// ErrServerInvalidSetupPath is an error that can be returned by a server.
+type ErrServerInvalidSetupPath struct{}
 
 // Error implements the error interface.
-func (ErrServerPathNoSlash) Error() string {
-	return "path of a SETUP request must end with a slash. " +
+func (ErrServerInvalidSetupPath) Error() string {
+	return "invalid SETUP path. " +
 		"This typically happens when VLC fails a request, and then switches to an " +
 		"unsupported RTSP dialect"
+}
+
+// ErrServerAuth is an error that can be returned by a server.
+// If a client did not provide credentials, it will be asked for
+// credentials instead of being kicked out.
+type ErrServerAuth struct{}
+
+// Error implements the error interface.
+func (e ErrServerAuth) Error() string {
+	return "authentication error"
 }
