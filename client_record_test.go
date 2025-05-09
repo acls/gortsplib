@@ -125,7 +125,7 @@ func readRequestIgnoreFrames(c *conn.Conn) (*base.Request, error) {
 	}
 }
 
-func TestClientRecordSerial(t *testing.T) {
+func TestClientRecord(t *testing.T) {
 	for _, transport := range []string{
 		"udp",
 		"tcp",
@@ -235,6 +235,10 @@ func TestClientRecordSerial(t *testing.T) {
 					StatusCode: base.StatusOK,
 					Header: base.Header{
 						"Transport": th.Marshal(),
+						"Session": headers.Session{
+							Session: "ABCDE",
+							Timeout: uintPtr(1),
+						}.Marshal(),
 					},
 				})
 				require.NoError(t, err2)
@@ -249,30 +253,49 @@ func TestClientRecordSerial(t *testing.T) {
 				})
 				require.NoError(t, err2)
 
-				// client -> server (RTP)
+				var pl []byte
+
+				// client -> server RTP packet
+
 				if transport == "udp" {
 					buf := make([]byte, 2048)
 					var n int
 					n, _, err2 = l1.ReadFrom(buf)
 					require.NoError(t, err2)
-
-					var pkt rtp.Packet
-					err2 = pkt.Unmarshal(buf[:n])
-					require.NoError(t, err2)
-					require.Equal(t, testRTPPacket, pkt)
+					pl = buf[:n]
 				} else {
 					var f *base.InterleavedFrame
 					f, err2 = conn.ReadInterleavedFrame()
 					require.NoError(t, err2)
 					require.Equal(t, 0, f.Channel)
-
-					var pkt rtp.Packet
-					err2 = pkt.Unmarshal(f.Payload)
-					require.NoError(t, err2)
-					require.Equal(t, testRTPPacket, pkt)
+					pl = f.Payload
 				}
 
-				// server -> client (RTCP)
+				var pkt rtp.Packet
+				err2 = pkt.Unmarshal(pl)
+				require.NoError(t, err2)
+				require.Equal(t, testRTPPacket, pkt)
+
+				// client -> server keepalive (UDP only)
+
+				if transport == "udp" {
+					recv := make(chan struct{})
+					go func() {
+						defer close(recv)
+						req, err2 = conn.ReadRequest()
+						require.NoError(t, err2)
+						require.Equal(t, base.Options, req.Method)
+					}()
+
+					select {
+					case <-recv:
+					case <-time.After(2 * time.Second):
+						t.Errorf("should not happen")
+					}
+				}
+
+				// server -> client RTCP packet
+
 				if transport == "udp" {
 					_, err2 = l2.WriteTo(testRTCPPacketMarshaled, &net.UDPAddr{
 						IP:   net.ParseIP("127.0.0.1"),
@@ -334,6 +357,13 @@ func TestClientRecordSerial(t *testing.T) {
 			require.NoError(t, err)
 
 			<-recvDone
+
+			s := c.Stats()
+			require.Greater(t, s.Session.BytesSent, uint64(15))
+			require.Less(t, s.Session.BytesSent, uint64(17))
+			require.Greater(t, s.Session.BytesReceived, uint64(19))
+			require.Less(t, s.Session.BytesReceived, uint64(21))
+
 			c.Close()
 			<-done
 
@@ -343,7 +373,7 @@ func TestClientRecordSerial(t *testing.T) {
 	}
 }
 
-func TestClientRecordParallel(t *testing.T) {
+func TestClientRecordSocketError(t *testing.T) {
 	for _, transport := range []string{
 		"udp",
 		"tcp",
@@ -439,15 +469,6 @@ func TestClientRecordParallel(t *testing.T) {
 					StatusCode: base.StatusOK,
 				})
 				require.NoError(t, err2)
-
-				req, err2 = readRequestIgnoreFrames(conn)
-				require.NoError(t, err2)
-				require.Equal(t, base.Teardown, req.Method)
-
-				err2 = conn.WriteResponse(&base.Response{
-					StatusCode: base.StatusOK,
-				})
-				require.NoError(t, err2)
 			}()
 
 			c := Client{
@@ -464,9 +485,6 @@ func TestClientRecordParallel(t *testing.T) {
 				}(),
 			}
 
-			writerDone := make(chan struct{})
-			defer func() { <-writerDone }()
-
 			medi := testH264Media
 			medias := []*description.Media{medi}
 
@@ -474,26 +492,20 @@ func TestClientRecordParallel(t *testing.T) {
 			require.NoError(t, err)
 			defer c.Close()
 
-			go func() {
-				defer close(writerDone)
+			ti := time.NewTicker(50 * time.Millisecond)
+			defer ti.Stop()
 
-				t := time.NewTicker(50 * time.Millisecond)
-				defer t.Stop()
-
-				for range t.C {
-					err := c.WritePacketRTP(medi, &testRTPPacket)
-					if err != nil {
-						return
-					}
+			for range ti.C {
+				err := c.WritePacketRTP(medi, &testRTPPacket)
+				if err != nil {
+					break
 				}
-			}()
-
-			time.Sleep(1 * time.Second)
+			}
 		})
 	}
 }
 
-func TestClientRecordPauseSerial(t *testing.T) {
+func TestClientRecordPauseRecordSerial(t *testing.T) {
 	for _, transport := range []string{
 		"udp",
 		"tcp",
@@ -629,6 +641,9 @@ func TestClientRecordPauseSerial(t *testing.T) {
 			_, err = c.Pause()
 			require.NoError(t, err)
 
+			err = c.WritePacketRTP(medi, &testRTPPacket)
+			require.NoError(t, err)
+
 			_, err = c.Record()
 			require.NoError(t, err)
 
@@ -638,7 +653,7 @@ func TestClientRecordPauseSerial(t *testing.T) {
 	}
 }
 
-func TestClientRecordPauseParallel(t *testing.T) {
+func TestClientRecordPauseRecordParallel(t *testing.T) {
 	for _, transport := range []string{
 		"udp",
 		"tcp",
@@ -722,9 +737,37 @@ func TestClientRecordPauseParallel(t *testing.T) {
 				})
 				require.NoError(t, err2)
 
+				if transport == "tcp" {
+					_, err2 = conn.ReadInterleavedFrame()
+					require.NoError(t, err2)
+				}
+
 				req, err2 = readRequestIgnoreFrames(conn)
 				require.NoError(t, err2)
 				require.Equal(t, base.Pause, req.Method)
+
+				err2 = conn.WriteResponse(&base.Response{
+					StatusCode: base.StatusOK,
+				})
+				require.NoError(t, err2)
+
+				req, err2 = conn.ReadRequest()
+				require.NoError(t, err2)
+				require.Equal(t, base.Record, req.Method)
+
+				err2 = conn.WriteResponse(&base.Response{
+					StatusCode: base.StatusOK,
+				})
+				require.NoError(t, err2)
+
+				if transport == "tcp" {
+					_, err2 = conn.ReadInterleavedFrame()
+					require.NoError(t, err2)
+				}
+
+				req, err2 = readRequestIgnoreFrames(conn)
+				require.NoError(t, err2)
+				require.Equal(t, base.Teardown, req.Method)
 
 				err2 = conn.WriteResponse(&base.Response{
 					StatusCode: base.StatusOK,
@@ -748,29 +791,45 @@ func TestClientRecordPauseParallel(t *testing.T) {
 
 			err = record(&c, "rtsp://localhost:8554/teststream", medias, nil)
 			require.NoError(t, err)
+			defer c.Close()
 
+			writerTerminate := make(chan struct{})
 			writerDone := make(chan struct{})
+
+			defer func() {
+				close(writerTerminate)
+				<-writerDone
+			}()
+
 			go func() {
 				defer close(writerDone)
 
-				t := time.NewTicker(50 * time.Millisecond)
-				defer t.Stop()
+				ti := time.NewTicker(50 * time.Millisecond)
+				defer ti.Stop()
 
-				for range t.C {
-					err2 := c.WritePacketRTP(medi, &testRTPPacket)
-					if err2 != nil {
+				for {
+					select {
+					case <-ti.C:
+						err2 := c.WritePacketRTP(medi, &testRTPPacket)
+						require.NoError(t, err2)
+
+					case <-writerTerminate:
 						return
 					}
 				}
 			}()
 
-			time.Sleep(1 * time.Second)
+			time.Sleep(500 * time.Millisecond)
 
 			_, err = c.Pause()
 			require.NoError(t, err)
 
-			c.Close()
-			<-writerDone
+			time.Sleep(500 * time.Millisecond)
+
+			_, err = c.Record()
+			require.NoError(t, err)
+
+			time.Sleep(500 * time.Millisecond)
 		})
 	}
 }

@@ -3,7 +3,7 @@ package format
 import (
 	"testing"
 
-	"github.com/bluenviron/mediacommon/pkg/codecs/h265"
+	"github.com/bluenviron/mediacommon/v2/pkg/codecs/h265"
 	"github.com/pion/rtp"
 	"github.com/stretchr/testify/require"
 )
@@ -71,42 +71,8 @@ func TestH265DecEncoder(t *testing.T) {
 	require.Equal(t, [][]byte{{0x01, 0x02, 0x03, 0x04}}, byts)
 }
 
-func FuzzUnmarshalH265(f *testing.F) {
-	f.Fuzz(func(
-		_ *testing.T,
-		a bool,
-		b string,
-		c bool,
-		d string,
-	) {
-		ma := map[string]string{}
-
-		if a {
-			ma["sprop-vps"] = b
-		}
-
-		if c {
-			ma["sprop-sps"] = d
-		}
-
-		if c {
-			ma["sprop-pps"] = d
-		}
-
-		if c {
-			ma["sprop-max-don-diff"] = d
-		}
-
-		fo, err := Unmarshal("video", 96, "H265/90000", ma)
-		if err == nil {
-			fo.RTPMap()
-			fo.FMTP()
-		}
-	})
-}
-
 func FuzzH265PTSEqualsDTS(f *testing.F) {
-	f.Fuzz(func(t *testing.T, b []byte) {
+	f.Fuzz(func(_ *testing.T, b []byte) {
 		(&H265{}).PTSEqualsDTS(&rtp.Packet{Payload: b})
 	})
 }

@@ -1,3 +1,5 @@
+//go:build cgo
+
 package main
 
 import (
@@ -11,15 +13,18 @@ import (
 )
 
 // This example shows how to
-// 1. connect to a RTSP server
-// 2. check if there's a VP9 format
-// 3. get access units of that format
+// 1. connect to a RTSP server.
+// 2. check if there's a VP9 stream.
+// 3. decode the VP9 stream into RGBA frames.
+
+// This example requires the FFmpeg libraries, that can be installed with this command:
+// apt install -y libavcodec-dev libswscale-dev gcc pkg-config
 
 func main() {
 	c := gortsplib.Client{}
 
 	// parse URL
-	u, err := base.ParseURL("rtsp://localhost:8554/mystream")
+	u, err := base.ParseURL("rtsp://myuser:mypass@localhost:8554/mystream")
 	if err != nil {
 		panic(err)
 	}
@@ -44,11 +49,19 @@ func main() {
 		panic("media not found")
 	}
 
-	// create decoder
+	// setup RTP -> VP9 decoder
 	rtpDec, err := forma.CreateDecoder()
 	if err != nil {
 		panic(err)
 	}
+
+	// setup VP9 -> RGBA decoder
+	vp9Dec := &vp9Decoder{}
+	err = vp9Dec.initialize()
+	if err != nil {
+		panic(err)
+	}
+	defer vp9Dec.close()
 
 	// setup a single media
 	_, err = c.Setup(desc.BaseURL, medi, 0, 0)
@@ -59,14 +72,14 @@ func main() {
 	// called when a RTP packet arrives
 	c.OnPacketRTP(medi, forma, func(pkt *rtp.Packet) {
 		// decode timestamp
-		pts, ok := c.PacketPTS(medi, pkt)
+		pts, ok := c.PacketPTS2(medi, pkt)
 		if !ok {
 			log.Printf("waiting for timestamp")
 			return
 		}
 
-		// extract VP9 frames from RTP packets
-		vf, err := rtpDec.Decode(pkt)
+		// extract access units from RTP packets
+		au, err := rtpDec.Decode(pkt)
 		if err != nil {
 			if err != rtpvp9.ErrNonStartingPacketAndNoPrevious && err != rtpvp9.ErrMorePacketsNeeded {
 				log.Printf("ERR: %v", err)
@@ -74,7 +87,18 @@ func main() {
 			return
 		}
 
-		log.Printf("received frame with PTS %v and size %d\n", pts, len(vf))
+		// convert VP9 access units into RGBA frames
+		img, err := vp9Dec.decode(au)
+		if err != nil {
+			panic(err)
+		}
+
+		// wait for a frame
+		if img == nil {
+			return
+		}
+
+		log.Printf("decoded frame with PTS %v and size %v", pts, img.Bounds().Max)
 	})
 
 	// start playing

@@ -12,14 +12,14 @@ import (
 )
 
 // This example shows how to
-// 1. connect to a RTSP server
+// 1. connect to a RTSP server.
 // 2. read all media streams on a path.
 
 func main() {
 	c := gortsplib.Client{}
 
 	// parse URL
-	u, err := base.ParseURL("rtsp://localhost:8554/mystream")
+	u, err := base.ParseURL("rtsp://myuser:mypass@localhost:8554/mystream")
 	if err != nil {
 		panic(err)
 	}
