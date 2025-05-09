@@ -146,7 +146,10 @@ func Unmarshal(md *psdp.MediaDescription, payloadTypeStr string) (Format, error)
 		case codec == "h265" && clock == "90000" && payloadType >= 96 && payloadType <= 127:
 			return &H265{}
 
-		case codec == "h264" && clock == "90000" && ((payloadType >= 96 && payloadType <= 127) || payloadType == 35):
+		// Some cameras use payload types in the "undefined" ranges of 35-71 and 77-95,
+		// so include those along with the "dynamic" range of 96-127.
+		case codec == "h264" && clock == "90000" &&
+			((payloadType >= 77 && payloadType <= 127) || (payloadType >= 35 && payloadType <= 71)):
 			return &H264{}
 
 		case codec == "mp4v-es" && clock == "90000" && payloadType >= 96 && payloadType <= 127:
